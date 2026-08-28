@@ -17,28 +17,35 @@ function validateParams(req, res, next) {
 export function recordsRouter(db) {
   const router = Router();
 
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const { from, to } = req.query;
     if (!DATE_RE.test(from ?? '') || !DATE_RE.test(to ?? '')) {
       return res.status(400).json({ error: 'from and to are required as YYYY-MM-DD' });
     }
-    const rows = db.prepare(
-      'SELECT date, prayer FROM prayer_records WHERE date BETWEEN ? AND ? ORDER BY date',
-    ).all(from, to);
+    const { rows } = await db.execute({
+      sql: 'SELECT date, prayer FROM prayer_records WHERE date BETWEEN ? AND ? ORDER BY date',
+      args: [from, to],
+    });
     const byDate = {};
     for (const { date, prayer } of rows) (byDate[date] ??= []).push(prayer);
     res.json(byDate);
   });
 
-  router.put('/:date/:prayer', validateParams, (req, res) => {
+  router.put('/:date/:prayer', validateParams, async (req, res) => {
     const { date, prayer } = req.params;
-    db.prepare('INSERT OR IGNORE INTO prayer_records (date, prayer) VALUES (?, ?)').run(date, prayer);
+    await db.execute({
+      sql: 'INSERT OR IGNORE INTO prayer_records (date, prayer) VALUES (?, ?)',
+      args: [date, prayer],
+    });
     res.json({ date, prayer, prayed: true });
   });
 
-  router.delete('/:date/:prayer', validateParams, (req, res) => {
+  router.delete('/:date/:prayer', validateParams, async (req, res) => {
     const { date, prayer } = req.params;
-    db.prepare('DELETE FROM prayer_records WHERE date = ? AND prayer = ?').run(date, prayer);
+    await db.execute({
+      sql: 'DELETE FROM prayer_records WHERE date = ? AND prayer = ?',
+      args: [date, prayer],
+    });
     res.json({ date, prayer, prayed: false });
   });
 

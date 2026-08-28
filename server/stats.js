@@ -28,35 +28,50 @@ function duePrayersToday(todayStr, settings, now) {
   return due;
 }
 
-export function getStats(db, { now, month }) {
-  const settings = getSettings(db);
+const countByPrayer = (rows) => Object.fromEntries(rows.map((r) => [r.prayer, Number(r.n)]));
+
+export async function getStats(db, { now, month }) {
+  const settings = await getSettings(db);
   const today = todayInTimezone(settings.timezone, now);
   const yesterday = addDays(today, -1);
   const start = settings.trackingStartDate;
   const dueToday = start <= today ? duePrayersToday(today, settings, now) : new Set();
 
-  const countMarked = db.prepare(
-    'SELECT COUNT(*) AS n FROM prayer_records WHERE prayer = ? AND date BETWEEN ? AND ?',
-  );
+  const monthStr = month ?? today.slice(0, 7);
+  const monthStart = `${monthStr}-01`;
+  const [my, mm] = monthStr.split('-').map(Number);
+  const monthEnd = `${monthStr}-${new Date(Date.UTC(my, mm, 0)).getUTCDate()}`;
+  const monthFrom = start > monthStart ? start : monthStart;
+  const monthPastTo = monthEnd < yesterday ? monthEnd : yesterday;
+  const todayInMonth = today >= monthFrom && today <= monthEnd;
+
+  // One round trip for all reads (BETWEEN with from > to is simply empty).
+  const grouped = 'SELECT prayer, COUNT(*) AS n FROM prayer_records WHERE date BETWEEN ? AND ? GROUP BY prayer';
+  const [pastRs, todayRs, monthRs, fullRs] = await db.batch([
+    { sql: grouped, args: [start, yesterday] },
+    { sql: 'SELECT prayer FROM prayer_records WHERE date = ?', args: [today] },
+    { sql: grouped, args: [monthFrom, monthPastTo] },
+    { sql: 'SELECT date FROM prayer_records GROUP BY date HAVING COUNT(*) = 5 ORDER BY date' },
+  ], 'read');
+  const pastMarked = countByPrayer(pastRs.rows);
+  const todayMarked = new Set(todayRs.rows.map((r) => r.prayer));
+  const monthMarked = countByPrayer(monthRs.rows);
+  const fullDates = fullRs.rows.map((r) => r.date);
 
   // Qaza: derived per prayer as expected due slots minus marked slots.
   const byPrayer = {};
   let total = 0;
   for (const prayer of PRAYERS) {
     const expected = daysBetween(start, yesterday) + (dueToday.has(prayer) ? 1 : 0);
-    const markedTo = dueToday.has(prayer) ? today : yesterday;
-    const marked = countMarked.get(prayer, start, markedTo).n;
+    const marked = (pastMarked[prayer] ?? 0)
+      + (dueToday.has(prayer) && todayMarked.has(prayer) ? 1 : 0);
     const owed = Math.max(0, expected - marked);
     byPrayer[prayer] = owed;
     total += owed;
   }
 
   // Streak: full days (all 5 marked), consecutive runs.
-  const fullDates = db.prepare(
-    'SELECT date FROM prayer_records GROUP BY date HAVING COUNT(*) = 5 ORDER BY date',
-  ).all().map((r) => r.date);
   const fullSet = new Set(fullDates);
-
   let current = 0;
   for (let d = yesterday; fullSet.has(d); d = addDays(d, -1)) current++;
   if (fullSet.has(today)) current++;
@@ -71,21 +86,13 @@ export function getStats(db, { now, month }) {
   }
 
   // Monthly completion: same window rule as qaza, restricted to the month.
-  const monthStr = month ?? today.slice(0, 7);
-  const monthStart = `${monthStr}-01`;
-  const [my, mm] = monthStr.split('-').map(Number);
-  const monthEnd = `${monthStr}-${new Date(Date.UTC(my, mm, 0)).getUTCDate()}`;
-  const from = start > monthStart ? start : monthStart;
-  const pastTo = monthEnd < yesterday ? monthEnd : yesterday;
-  const todayInMonth = today >= from && today >= monthStart && today <= monthEnd;
-
   let due = 0;
   let prayed = 0;
   for (const prayer of PRAYERS) {
     const dueTodayHere = todayInMonth && dueToday.has(prayer) ? 1 : 0;
-    const duePrayer = daysBetween(from, pastTo) + dueTodayHere;
-    const markedTo = dueTodayHere ? today : pastTo;
-    const marked = from <= markedTo ? countMarked.get(prayer, from, markedTo).n : 0;
+    const duePrayer = daysBetween(monthFrom, monthPastTo) + dueTodayHere;
+    const marked = (monthMarked[prayer] ?? 0)
+      + (dueTodayHere && todayMarked.has(prayer) ? 1 : 0);
     due += duePrayer;
     prayed += Math.min(marked, duePrayer);
   }

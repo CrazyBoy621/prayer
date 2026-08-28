@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import { createDb } from '../server/db.js';
 import { getSettings, updateSettings } from '../server/settings.js';
 
-test('createDb creates schema and seeds default settings', () => {
-  const db = createDb(':memory:');
-  const settings = getSettings(db);
+const insert = (db, date, prayer) =>
+  db.execute({ sql: 'INSERT INTO prayer_records (date, prayer) VALUES (?, ?)', args: [date, prayer] });
+
+test('createDb creates schema and seeds default settings', async () => {
+  const db = await createDb({ url: ':memory:' });
+  const settings = await getSettings(db);
   assert.equal(settings.latitude, 41.2995);
   assert.equal(settings.longitude, 69.2401);
   assert.equal(settings.timezone, 'Asia/Tashkent');
@@ -14,32 +17,31 @@ test('createDb creates schema and seeds default settings', () => {
   assert.match(settings.trackingStartDate, /^\d{4}-\d{2}-\d{2}$/);
 });
 
-test('prayer_records rejects invalid prayer names and dates', () => {
-  const db = createDb(':memory:');
-  const insert = db.prepare('INSERT INTO prayer_records (date, prayer) VALUES (?, ?)');
-  insert.run('2026-08-27', 'fajr');
-  assert.throws(() => insert.run('2026-08-27', 'breakfast'));
-  assert.throws(() => insert.run('not-a-date', 'fajr'));
+test('prayer_records rejects invalid prayer names and dates', async () => {
+  const db = await createDb({ url: ':memory:' });
+  await insert(db, '2026-08-27', 'fajr');
+  await assert.rejects(() => insert(db, '2026-08-27', 'breakfast'));
+  await assert.rejects(() => insert(db, 'not-a-date', 'fajr'));
 });
 
-test('updateSettings applies a valid partial update', () => {
-  const db = createDb(':memory:');
-  const updated = updateSettings(db, { madhab: 'Shafi', latitude: 40.5 });
+test('updateSettings applies a valid partial update', async () => {
+  const db = await createDb({ url: ':memory:' });
+  const updated = await updateSettings(db, { madhab: 'Shafi', latitude: 40.5 });
   assert.equal(updated.madhab, 'Shafi');
   assert.equal(updated.latitude, 40.5);
   assert.equal(updated.timezone, 'Asia/Tashkent'); // untouched keys survive
 });
 
-test('updateSettings rejects invalid values', () => {
-  const db = createDb(':memory:');
-  assert.throws(() => updateSettings(db, { latitude: 999 }), /latitude/);
-  assert.throws(() => updateSettings(db, { longitude: -300 }), /longitude/);
-  assert.throws(() => updateSettings(db, { timezone: 'Mars/Olympus' }), /timezone/);
-  assert.throws(() => updateSettings(db, { method: 'MadeUpMethod' }), /method/);
-  assert.throws(() => updateSettings(db, { madhab: 'Other' }), /madhab/);
-  assert.throws(() => updateSettings(db, { trackingStartDate: '27-08-2026' }), /trackingStartDate/);
-  assert.throws(() => updateSettings(db, { unknownKey: 1 }), /unknown/i);
+test('updateSettings rejects invalid values', async () => {
+  const db = await createDb({ url: ':memory:' });
+  await assert.rejects(() => updateSettings(db, { latitude: 999 }), /latitude/);
+  await assert.rejects(() => updateSettings(db, { longitude: -300 }), /longitude/);
+  await assert.rejects(() => updateSettings(db, { timezone: 'Mars/Olympus' }), /timezone/);
+  await assert.rejects(() => updateSettings(db, { method: 'MadeUpMethod' }), /method/);
+  await assert.rejects(() => updateSettings(db, { madhab: 'Other' }), /madhab/);
+  await assert.rejects(() => updateSettings(db, { trackingStartDate: '27-08-2026' }), /trackingStartDate/);
+  await assert.rejects(() => updateSettings(db, { unknownKey: 1 }), /unknown/i);
   // failed update must not partially apply
-  assert.throws(() => updateSettings(db, { madhab: 'Shafi', latitude: 999 }));
-  assert.equal(getSettings(db).madhab, 'Hanafi');
+  await assert.rejects(() => updateSettings(db, { madhab: 'Shafi', latitude: 999 }));
+  assert.equal((await getSettings(db)).madhab, 'Hanafi');
 });

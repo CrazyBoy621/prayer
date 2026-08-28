@@ -67,8 +67,8 @@ function badValue(key, value) {
   return err;
 }
 
-export function getSettings(db) {
-  const rows = db.prepare('SELECT key, value FROM settings').all();
+export async function getSettings(db) {
+  const { rows } = await db.execute('SELECT key, value FROM settings');
   const raw = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   return {
     latitude: Number(raw.latitude),
@@ -80,16 +80,21 @@ export function getSettings(db) {
   };
 }
 
-export function updateSettings(db, patch) {
+export async function updateSettings(db, patch) {
   const writes = [];
   for (const [key, value] of Object.entries(patch)) {
     const spec = KEYS[key];
     if (!spec) throw badValue(`unknown setting "${key}"`, value);
     writes.push([spec.column, spec.parse(value)]);
   }
-  const update = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
-  db.transaction(() => {
-    for (const [column, value] of writes) update.run(value, column);
-  })();
+  if (writes.length) {
+    await db.batch(
+      writes.map(([column, value]) => ({
+        sql: 'UPDATE settings SET value = ? WHERE key = ?',
+        args: [value, column],
+      })),
+      'write',
+    );
+  }
   return getSettings(db);
 }

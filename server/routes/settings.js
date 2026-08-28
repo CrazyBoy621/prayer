@@ -4,12 +4,12 @@ import { getSettings, updateSettings } from '../settings.js';
 export function settingsRouter(db) {
   const router = Router();
 
-  router.get('/', (req, res) => {
-    res.json(getSettings(db));
+  router.get('/', async (req, res) => {
+    res.json(await getSettings(db));
   });
 
-  router.put('/', (req, res) => {
-    res.json(updateSettings(db, req.body ?? {}));
+  router.put('/', async (req, res) => {
+    res.json(await updateSettings(db, req.body ?? {}));
   });
 
   return router;

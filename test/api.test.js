@@ -6,8 +6,8 @@ import { createApp } from '../server/app.js';
 // 2026-08-28 10:00 in Tashkent (UTC+5)
 const FIXED_NOW = new Date('2026-08-28T05:00:00Z');
 
-function startServer(t) {
-  const db = createDb(':memory:');
+async function startServer(t) {
+  const db = await createDb({ url: ':memory:' });
   const app = createApp(db, { now: () => FIXED_NOW });
   const server = app.listen(0);
   t.after(() => server.close());
@@ -26,7 +26,7 @@ const json = (method, body) => ({
 });
 
 test('records: mark, list, unmark — idempotent', async (t) => {
-  const { api } = startServer(t);
+  const { api } = await startServer(t);
 
   const put = await api('/api/records/2026-08-27/fajr', { method: 'PUT' });
   assert.equal(put.status, 200);
@@ -54,7 +54,7 @@ test('records: mark, list, unmark — idempotent', async (t) => {
 });
 
 test('records: validation errors', async (t) => {
-  const { api } = startServer(t);
+  const { api } = await startServer(t);
   assert.equal((await api('/api/records/2026-08-27/breakfast', { method: 'PUT' })).status, 400);
   assert.equal((await api('/api/records/27-08-2026/fajr', { method: 'PUT' })).status, 400);
   assert.equal((await api('/api/records?from=2026-08-01')).status, 400);
@@ -62,7 +62,7 @@ test('records: validation errors', async (t) => {
 });
 
 test('times: explicit date and default to today in configured tz', async (t) => {
-  const { api } = startServer(t);
+  const { api } = await startServer(t);
 
   const explicit = await api('/api/times?date=2026-08-28');
   assert.equal(explicit.status, 200);
@@ -82,7 +82,7 @@ test('times: explicit date and default to today in configured tz', async (t) => 
 });
 
 test('settings: get, partial update, validation', async (t) => {
-  const { api } = startServer(t);
+  const { api } = await startServer(t);
 
   const initial = await api('/api/settings');
   assert.equal(initial.body.madhab, 'Hanafi');
@@ -97,7 +97,7 @@ test('settings: get, partial update, validation', async (t) => {
 });
 
 test('stats: shape, default month, and month validation', async (t) => {
-  const { api } = startServer(t);
+  const { api } = await startServer(t);
   await api('/api/records/2026-08-27/fajr', { method: 'PUT' });
 
   const res = await api('/api/stats');
@@ -116,7 +116,7 @@ test('stats: shape, default month, and month validation', async (t) => {
 });
 
 test('unknown api route returns 404 json', async (t) => {
-  const { api } = startServer(t);
+  const { api } = await startServer(t);
   const res = await api('/api/nope');
   assert.equal(res.status, 404);
   assert.ok(res.body.error);

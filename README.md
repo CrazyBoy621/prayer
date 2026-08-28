@@ -16,7 +16,29 @@ npm run dev        # auto-restart on changes
 npm test           # stats logic + API tests (node:test)
 ```
 
-Data lives in `data/prayer.db` (SQLite, created on first run). Set `DB_PATH` to override.
+Data lives in `data/prayer.db` (SQLite via libsql, created on first run). Set `TURSO_DATABASE_URL` (+ `TURSO_AUTH_TOKEN`) to use a hosted Turso database instead.
+
+## Telegram bot + mini app
+
+The app runs as a Telegram Mini App locked to a single owner. Deployed on Vercel (`api/index.js` wraps the Express app; `public/` is served statically).
+
+Environment variables (Vercel → Settings → Environment Variables):
+
+| Var | Purpose |
+|---|---|
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Hosted SQLite database |
+| `BOT_TOKEN` | Telegram bot token from BotFather |
+| `OWNER_TELEGRAM_ID` | Your numeric Telegram user id — the only account allowed |
+| `WEBHOOK_SECRET` | Random string; Telegram echoes it so the webhook can verify callers |
+| `APP_URL` | The deployed HTTPS URL, e.g. `https://…vercel.app` |
+
+Every `/api` request must carry Telegram's signed `initData` (validated server-side, HMAC-SHA256) and belong to `OWNER_TELEGRAM_ID`. With no `BOT_TOKEN` set (local dev), the API is open.
+
+One-time wiring after deploy (sets webhook + chat menu button):
+
+```sh
+BOT_TOKEN=... APP_URL=https://... WEBHOOK_SECRET=... node scripts/setup-telegram.js
+```
 
 ## Settings
 

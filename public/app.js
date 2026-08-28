@@ -16,7 +16,12 @@ const state = {
 
 const $ = (sel) => document.querySelector(sel);
 
-async function api(path, options) {
+const tg = window.Telegram?.WebApp;
+
+async function api(path, options = {}) {
+  if (tg?.initData) {
+    options.headers = { ...options.headers, 'x-telegram-init-data': tg.initData };
+  }
   const res = await fetch(path, options);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
@@ -320,4 +325,11 @@ async function init() {
   setTab(location.hash.slice(1) || 'day');
 }
 
-init();
+if (tg) {
+  tg.ready();
+  tg.expand();
+}
+
+init().catch((err) => {
+  document.querySelector('#main').innerHTML = `<p class="error">${err.message}</p>`;
+});
