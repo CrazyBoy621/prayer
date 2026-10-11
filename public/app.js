@@ -331,5 +331,7 @@ if (tg) {
 }
 
 init().catch((err) => {
-  document.querySelector('#main').innerHTML = `<p class="error">${err.message}</p>`;
+  const diag = `sdk:${!!window.Telegram} init:${tg?.initData?.length ?? 'n/a'} v:${tg?.version ?? '?'} plat:${tg?.platform ?? '?'}`;
+  document.querySelector('#main').innerHTML =
+    `<p class="error">${err.message}</p><p class="cal-hint">${diag}</p>`;
 });
